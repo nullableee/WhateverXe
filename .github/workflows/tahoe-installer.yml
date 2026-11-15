@@ -1,0 +1,40 @@
+name: tahoe-installer
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '26.7.2'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # без этого gh release create упадёт с 403
+
+jobs:
+  fetch:
+    runs-on: macos-26-intel   # для Intel-хакинтоша
+    steps:
+      - run: df -h /
+      - run: softwareupdate --list-full-installers
+      - run: sudo softwareupdate --fetch-full-installer --full-installer-version "${{ inputs.version }}"
+
+      # Собираем загрузочный образ прямо на раннере
+      - name: Build bootable image
+        run: |
+          hdiutil create -size 24g -fs HFS+J -volname TahoeUSB -layout GPTSPUD tahoe.dmg
+          hdiutil attach tahoe.dmg -mountpoint /Volumes/TahoeUSB
+          sudo "/Applications/Install macOS Tahoe.app/Contents/Resources/createinstallmedia" \
+            --volume /Volumes/TahoeUSB --nointeraction
+          hdiutil detach /Volumes/Install* || hdiutil detach /Volumes/TahoeUSB
+          hdiutil convert tahoe.dmg -format UDRW -o tahoe-raw.img
+          mv tahoe-raw.img.dmg tahoe-raw.img 2>/dev/null || true
+
+      - name: Split and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          xz -T0 -3 tahoe-raw.img
+          split -b 1900m tahoe-raw.img.xz tahoe.img.xz.part_
+          shasum -a 256 tahoe.img.xz.part_* > SHA256SUMS
+          gh release create "tahoe-${{ inputs.version }}" --repo "$GITHUB_REPOSITORY" --notes "installer" || true
+          gh release upload "tahoe-${{ inputs.version }}" tahoe.img.xz.part_* SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
