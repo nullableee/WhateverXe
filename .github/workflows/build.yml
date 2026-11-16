@@ -1,0 +1,88 @@
+name: Build AppleIntelTGLCompat
+
+on:
+  workflow_dispatch:
+    inputs:
+      wex_ref:
+        description: "Ветка/тег/коммит b00t0x/WhateverXe (пусто = ветка по умолчанию)"
+        required: false
+        default: ""
+      lilu_ref:
+        description: "Тег/ветка acidanthera/Lilu (README WhateverXe: CI использует тег 1.7.2)"
+        required: true
+        default: "1.7.2"
+
+jobs:
+  build:
+    name: Build WhateverXe / AppleIntelTGLCompat
+    # Intel x86_64. macos-13 снят с поддержки 2025-12-04; macos-latest = arm64.
+    runs-on: macos-15-intel
+
+    steps:
+      - name: Checkout WhateverXe
+        uses: actions/checkout@v4
+        with:
+          repository: b00t0x/WhateverXe
+          ref: ${{ inputs.wex_ref }}
+          path: WhateverXe
+
+      - name: Checkout MacKernelSDK
+        uses: actions/checkout@v4
+        with:
+          repository: acidanthera/MacKernelSDK
+          path: MacKernelSDK
+
+      - name: Checkout Lilu
+        uses: actions/checkout@v4
+        with:
+          repository: acidanthera/Lilu
+          ref: ${{ inputs.lilu_ref }}
+          path: Lilu
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build Lilu (Debug, как в bootstrap acidanthera)
+        run: |
+          cp -R MacKernelSDK Lilu/MacKernelSDK
+          cd Lilu
+          xcodebuild -jobs 1 -configuration Debug
+          ls -la build/Debug
+
+      - name: Put MacKernelSDK and Lilu.kext into WhateverXe
+        run: |
+          cp -R MacKernelSDK WhateverXe/MacKernelSDK
+          cp -R Lilu/build/Debug/Lilu.kext WhateverXe/Lilu.kext
+          ls -la WhateverXe
+
+      - name: Build WhateverXe
+        working-directory: WhateverXe
+        run: python3 tools/build.py --release
+
+      - name: Test WhateverXe
+        working-directory: WhateverXe
+        run: python3 tools/test.py
+
+      - name: List build output
+        if: always()
+        working-directory: WhateverXe
+        run: |
+          ls -la build || true
+          find build -name "*.kext" -maxdepth 3 || true
+
+      - name: Upload AppleIntelTGLCompat.kext
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleIntelTGLCompat
+          path: WhateverXe/build/AppleIntelTGLCompat.kext
+          if-no-files-found: error
+
+      - name: Upload full build directory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhateverXe-build-full
+          path: WhateverXe/build
+          if-no-files-found: warn
