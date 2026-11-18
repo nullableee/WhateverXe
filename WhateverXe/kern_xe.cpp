@@ -8342,6 +8342,15 @@ uint32_t XE::wrapAlderLakeNPortDDC(OSObject *port,uint32_t block,uint8_t *data,b
     auto root=IORegistryEntry::getRegistryRoot();if(selected)root->setProperty("N97FBPortDDCEntry",r,sizeof(r));
     const auto result=FunctionCast(wrapAlderLakeNPortDDC,callbackXE->orgAlderLakeNPortDDC)(port,block,data,force);r[3]=result;
     cachePanelDepth(port,block,data,result);
+    if(!result && data && tglPanelDepthPort(port)<=1) {
+        if(block==1 && data[126]>=1) {
+            uint8_t ext[128] {};
+            if(!FunctionCast(wrapAlderLakeNPortDDC,callbackXE->orgAlderLakeNPortDDC)(port,2,ext,force))
+                TGLPanelDepth::promoteDisplayID20Timing(data,ext);
+        } else if(block==2) {
+            TGLPanelDepth::downgradeDisplayID20Extension(data);
+        }
+    }
     if(selected) {
         if(!result && data && (block==1 || block==2)) {
             uint32_t sum=0;for(unsigned i=0;i<128;++i)sum+=data[i];r[4]=sum&255;
@@ -17749,6 +17758,15 @@ uint32_t XE::wrapTGLPortDDC(void *port, uint32_t block, uint8_t *data, bool forc
 	const auto r = FunctionCast(wrapTGLPortDDC, callbackXE->orgTGLPortDDC)(port, block, data, force);
 	tglTrace(1, id, true, block, force, r, 0);
 	cachePanelDepth(port,block,data,r);
+	if (r == 0 && data && tglPanelDepthPort(port) <= 1) {
+		if (block == 1 && data[126] >= 1) {
+			uint8_t ext[128] {};
+			if (FunctionCast(wrapTGLPortDDC, callbackXE->orgTGLPortDDC)(port, 2, ext, force) == 0)
+				TGLPanelDepth::promoteDisplayID20Timing(data, ext);
+		} else if (block == 2) {
+			TGLPanelDepth::downgradeDisplayID20Extension(data);
+		}
+	}
 	if (r == 0 && data && (block == 1 || block == 2)) {
 		char key[40]; snprintf(key, sizeof(key), "TGLWEGPort%uDDC%s", id, block == 1 ? "Base" : "Extension");
 		IORegistryEntry::getRegistryRoot()->setProperty(key, data, 128);
